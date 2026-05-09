@@ -1,0 +1,400 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Task Manager</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+
+<body>
+
+<div class="layout">
+
+<aside class="sidebar">
+<div class="logo">
+<h2>✔ Smart Task Manager</h2>
+</div>
+
+<nav class="menu">
+<a href="#" class="active">Dashboard</a>
+<a href="#">My Tasks</a>
+<a href="#">Add Task</a>
+<a href="#">Analytics</a>
+<a href="#">Profile</a>
+<a href="#">Logout</a>
+</nav>
+</aside>
+
+<main class="main-content">
+
+<div class="topbar">
+<h1>Dashboard</h1>
+<p>Welcome back, Karthik 👋</p>
+</div>
+
+<div class="top-grid">
+
+<div class="card custom-card task-form-card">
+
+<h4 id="formTitle">Add New Task</h4>
+
+<form id="taskForm">
+
+<input type="hidden" id="editIndex">
+
+<div class="mb-3">
+<label class="form-label">Title</label>
+<input type="text" id="title" class="form-control" required>
+</div>
+
+<div class="mb-3">
+<label class="form-label">Description</label>
+<textarea id="description" class="form-control" rows="3"></textarea>
+</div>
+
+<div class="row">
+
+<div class="col-md-6 mb-3">
+<label class="form-label">Priority</label>
+
+<select id="priority" class="form-select">
+<option>High</option>
+<option selected>Medium</option>
+<option>Low</option>
+</select>
+
+</div>
+
+<div class="col-md-6 mb-3">
+
+<label class="form-label">Status</label>
+
+<select id="status" class="form-select">
+<option selected>Pending</option>
+<option>In Progress</option>
+<option>Completed</option>
+</select>
+
+</div>
+
+</div>
+
+<button type="submit" class="btn btn-primary add-btn w-100" id="submitBtn">
++ Add Task
+</button>
+
+</form>
+
+</div>
+
+<div class="analytics-wrapper">
+
+<div class="analytics-grid">
+
+<div class="analytics-card blue">
+<h5>Total Tasks</h5>
+<h2 id="totalTasks">0</h2>
+</div>
+
+<div class="analytics-card green">
+<h5>Completed</h5>
+<h2 id="completedTasks">0</h2>
+</div>
+
+<div class="analytics-card orange">
+<h5>Pending</h5>
+<h2 id="pendingTasks">0</h2>
+</div>
+
+<div class="analytics-card purple">
+<h5>Completion %</h5>
+<h2 id="completionPercentage">0%</h2>
+</div>
+
+</div>
+
+<div class="card custom-card chart-card">
+
+<h5>Task Completion Overview</h5>
+
+<div class="progress-wrapper">
+
+<div class="circle" id="progressCircle">
+<span id="progressText">0%</span>
+</div>
+
+<div class="legend">
+<p><span class="dot green-dot"></span> Completed</p>
+<p><span class="dot orange-dot"></span> Pending</p>
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+<div class="bottom-grid">
+
+<div class="card custom-card task-table-card">
+
+<h4>Your Tasks</h4>
+
+<div class="table-responsive">
+
+<table class="table align-middle">
+
+<thead>
+<tr>
+<th>#</th>
+<th>Title</th>
+<th>Description</th>
+<th>Priority</th>
+<th>Status</th>
+<th>Date</th>
+<th>Actions</th>
+</tr>
+</thead>
+
+<tbody id="taskTableBody">
+</tbody>
+
+</table>
+
+</div>
+
+</div>
+
+<div class="card custom-card notification-card">
+
+<h4>Live Notifications</h4>
+
+<div id="notifications"></div>
+
+</div>
+
+</div>
+
+</main>
+
+</div>
+
+<script>
+
+const socket = io();
+
+let tasks = [];
+
+function addNotification(message, type="info"){
+
+    const notifications = document.getElementById("notifications");
+
+    const div = document.createElement("div");
+
+    div.className = `notify ${type}`;
+    div.innerHTML = message;
+
+    notifications.prepend(div);
+}
+
+function renderTasks(){
+
+    const tbody = document.getElementById("taskTableBody");
+
+    tbody.innerHTML = "";
+
+    tasks.forEach((task,index)=>{
+
+        const row = `
+        <tr>
+
+            <td>${index + 1}</td>
+
+            <td>${task.title}</td>
+
+            <td>${task.description}</td>
+
+            <td>
+                <span class="badge ${getPriorityClass(task.priority)}">
+                    ${task.priority}
+                </span>
+            </td>
+
+            <td>
+                <span class="badge ${getStatusClass(task.status)}">
+                    ${task.status}
+                </span>
+            </td>
+
+            <td>${task.date}</td>
+
+            <td>
+
+                <button
+                    class="btn btn-sm btn-outline-primary me-2"
+                    onclick="editTask(${index})">
+                    Edit
+                </button>
+
+                <button
+                    class="btn btn-sm btn-outline-danger"
+                    onclick="deleteTask(${index})">
+                    Delete
+                </button>
+
+            </td>
+
+        </tr>
+        `;
+
+        tbody.innerHTML += row;
+    });
+
+    updateAnalytics();
+}
+
+function editTask(index){
+
+    const task = tasks[index];
+
+    document.getElementById("title").value = task.title;
+    document.getElementById("description").value = task.description;
+    document.getElementById("priority").value = task.priority;
+    document.getElementById("status").value = task.status;
+
+    document.getElementById("editIndex").value = index;
+
+    document.getElementById("formTitle").innerText = "Edit Task";
+
+    document.getElementById("submitBtn").innerText = "Update Task";
+
+    addNotification("✏️ Editing task","info");
+}
+
+function deleteTask(index){
+
+    tasks.splice(index,1);
+
+    renderTasks();
+
+    addNotification("🗑️ Task deleted","warning");
+
+    socket.emit("task_update",{
+        message:"Task Deleted"
+    });
+}
+
+function getPriorityClass(priority){
+
+    if(priority === "High") return "bg-danger";
+
+    if(priority === "Medium")
+        return "bg-warning text-dark";
+
+    return "bg-success";
+}
+
+function getStatusClass(status){
+
+    if(status === "Completed")
+        return "bg-success";
+
+    if(status === "In Progress")
+        return "bg-primary";
+
+    return "bg-secondary";
+}
+
+function updateAnalytics(){
+
+    const total = tasks.length;
+
+    const completed = tasks.filter(
+        task => task.status === "Completed"
+    ).length;
+
+    const pending = total - completed;
+
+    const percentage = total === 0
+        ? 0
+        : Math.round((completed / total) * 100);
+
+    document.getElementById("totalTasks").innerText = total;
+    document.getElementById("completedTasks").innerText = completed;
+    document.getElementById("pendingTasks").innerText = pending;
+    document.getElementById("completionPercentage").innerText =
+        percentage + "%";
+
+    document.getElementById("progressText").innerText =
+        percentage + "%";
+
+    document.getElementById("progressCircle").style.background =
+        `conic-gradient(#22c55e ${percentage}%, #f59e0b 0%)`;
+}
+
+document.getElementById("taskForm").addEventListener("submit", function(e){
+
+    e.preventDefault();
+
+    const task = {
+        title: document.getElementById("title").value,
+        description: document.getElementById("description").value,
+        priority: document.getElementById("priority").value,
+        status: document.getElementById("status").value,
+        date: new Date().toLocaleDateString()
+    };
+
+    const editIndex =
+        document.getElementById("editIndex").value;
+
+    if(editIndex !== ""){
+
+        tasks[editIndex] = task;
+
+        addNotification("✏️ Task updated successfully","success");
+
+        socket.emit("task_update",{
+            message:"Task Updated"
+        });
+
+    } else {
+
+        tasks.push(task);
+
+        addNotification("📌 New task added","info");
+
+        socket.emit("task_update",{
+            message:"Task Added"
+        });
+    }
+
+    renderTasks();
+
+    this.reset();
+
+    document.getElementById("editIndex").value = "";
+
+    document.getElementById("formTitle").innerText =
+        "Add New Task";
+
+    document.getElementById("submitBtn").innerText =
+        "+ Add Task";
+});
+
+socket.on("task_update",(data)=>{
+    console.log(data.message);
+});
+
+renderTasks();
+
+</script>
+
+</body>
+</html>
